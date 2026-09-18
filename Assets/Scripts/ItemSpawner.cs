@@ -53,44 +53,27 @@ public class ItemSpawner : MonoBehaviour
 
     private GameObject CreateItemX() // Senzu Bean
     {
-        // Tạo khối chính hình Capsule
-        GameObject obj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-        obj.name = "ItemX_Bean";
-        obj.transform.localScale = new Vector3(0.4f, 0.4f, 0.4f);
+        GameObject obj = new GameObject("ItemX_Bean");
+        obj.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
         
-        Collider col = obj.GetComponent<Collider>();
-        if (col != null) Destroy(col); // Xóa collider mặc định để dùng circle 2D trong ItemController
+        SpriteRenderer sr = obj.AddComponent<SpriteRenderer>();
+        sr.sprite = Resources.Load<Sprite>("item_senzu_bean");
+        sr.sortingOrder = 5;
 
-        Renderer r = obj.GetComponent<Renderer>();
-        if (r != null)
-        {
-            r.material = new Material(Shader.Find("Sprites/Default"));
-            r.material.color = new Color(0.2f, 0.9f, 0.2f, 1f); // Xanh lá sáng
-        }
-
-        // Vầng hào quang (Glow) mờ bên ngoài
-        GameObject glow = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        glow.name = "Glow";
-        glow.transform.SetParent(obj.transform, false);
-        glow.transform.localScale = new Vector3(1.3f, 1.3f, 1.3f);
-        Destroy(glow.GetComponent<Collider>());
-        Renderer gr = glow.GetComponent<Renderer>();
-        gr.material = new Material(Shader.Find("Sprites/Default"));
-        gr.material.color = new Color(0f, 1f, 0f, 0.3f);
-
-        // Chữ "+HP / +KI" nổi
+        // Chữ "+HP/KI" nổi
         GameObject txtObj = new GameObject("Text");
         txtObj.transform.SetParent(obj.transform, false);
-        txtObj.transform.localPosition = new Vector3(0, 1.2f, 0);
+        txtObj.transform.localPosition = new Vector3(0, -1.2f, 0); // Đưa xuống dưới
         TextMesh tm = txtObj.AddComponent<TextMesh>();
-        tm.text = "+HP";
+        tm.text = "+HP/KI";
         tm.characterSize = 0.15f;
-        tm.fontSize = 60;
+        tm.fontSize = 40;
         tm.anchor = TextAnchor.MiddleCenter;
         tm.alignment = TextAlignment.Center;
         tm.color = Color.green;
         tm.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         txtObj.GetComponent<Renderer>().material = tm.font.material;
+        txtObj.GetComponent<Renderer>().sortingOrder = 6;
 
         ItemController ic = obj.AddComponent<ItemController>();
         ic.itemType = ItemType.X_SenzuBean;
@@ -99,36 +82,27 @@ public class ItemSpawner : MonoBehaviour
 
     private GameObject CreateItemY() // Spike Trap
     {
-        // Lõi là khối cầu đen sẫm
-        GameObject obj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        obj.name = "ItemY_Spike";
-        obj.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+        GameObject obj = new GameObject("ItemY_Spike");
+        obj.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
         
-        Collider col = obj.GetComponent<Collider>();
-        if (col != null) Destroy(col);
+        SpriteRenderer sr = obj.AddComponent<SpriteRenderer>();
+        sr.sprite = Resources.Load<Sprite>("item_spike_trap");
+        sr.sortingOrder = 5;
 
-        Renderer r = obj.GetComponent<Renderer>();
-        if (r != null)
-        {
-            r.material = new Material(Shader.Find("Sprites/Default"));
-            r.material.color = new Color(0.1f, 0.1f, 0.1f, 1f); // Đen
-        }
-
-        // Tạo 6 cái gai (Spikes) bằng Cylinder đâm ra các hướng
-        Vector3[] directions = { Vector3.up, Vector3.down, Vector3.left, Vector3.right, Vector3.forward, Vector3.back };
-        foreach(Vector3 dir in directions)
-        {
-            GameObject spike = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            spike.name = "Spike";
-            spike.transform.SetParent(obj.transform, false);
-            spike.transform.localScale = new Vector3(0.3f, 0.6f, 0.3f);
-            spike.transform.localPosition = dir * 0.5f;
-            spike.transform.up = dir;
-            Destroy(spike.GetComponent<Collider>());
-            Renderer sr = spike.GetComponent<Renderer>();
-            sr.material = new Material(Shader.Find("Sprites/Default"));
-            sr.material.color = Color.red; // Gai đỏ
-        }
+        // Chữ "DANGER" cảnh báo
+        GameObject txtObj = new GameObject("Text");
+        txtObj.transform.SetParent(obj.transform, false);
+        txtObj.transform.localPosition = new Vector3(0, -1.2f, 0);
+        TextMesh tm = txtObj.AddComponent<TextMesh>();
+        tm.text = "DANGER!";
+        tm.characterSize = 0.15f;
+        tm.fontSize = 40;
+        tm.anchor = TextAnchor.MiddleCenter;
+        tm.alignment = TextAlignment.Center;
+        tm.color = Color.red;
+        tm.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        txtObj.GetComponent<Renderer>().material = tm.font.material;
+        txtObj.GetComponent<Renderer>().sortingOrder = 6;
 
         ItemController ic = obj.AddComponent<ItemController>();
         ic.itemType = ItemType.Y_SpikeTrap;
@@ -137,34 +111,27 @@ public class ItemSpawner : MonoBehaviour
 
     private GameObject CreateItemZ() // Mystery Box
     {
-        // Rương là khối hộp vàng
-        GameObject obj = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        obj.name = "ItemZ_Box";
-        obj.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+        GameObject obj = new GameObject("ItemZ_Box");
+        obj.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
+        
+        SpriteRenderer sr = obj.AddComponent<SpriteRenderer>();
+        sr.sprite = Resources.Load<Sprite>("item_mystery_box");
+        sr.sortingOrder = 5;
 
-        Collider col = obj.GetComponent<Collider>();
-        if (col != null) Destroy(col);
-
-        Renderer r = obj.GetComponent<Renderer>();
-        if (r != null)
-        {
-            r.material = new Material(Shader.Find("Sprites/Default"));
-            r.material.color = new Color(1f, 0.8f, 0f, 1f); // Vàng Gold
-        }
-
-        // Chữ "?"
+        // Chữ "+SCORE"
         GameObject txtObj = new GameObject("Text");
         txtObj.transform.SetParent(obj.transform, false);
-        txtObj.transform.localPosition = new Vector3(0, 0, -0.55f); // Đưa ra mặt trước
+        txtObj.transform.localPosition = new Vector3(0, -1.2f, 0);
         TextMesh tm = txtObj.AddComponent<TextMesh>();
-        tm.text = "?";
+        tm.text = "+SCORE";
         tm.characterSize = 0.15f;
-        tm.fontSize = 80;
-        tm.color = Color.red;
+        tm.fontSize = 40;
+        tm.color = Color.yellow;
         tm.anchor = TextAnchor.MiddleCenter;
         tm.alignment = TextAlignment.Center;
         tm.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         txtObj.GetComponent<Renderer>().material = tm.font.material;
+        txtObj.GetComponent<Renderer>().sortingOrder = 6;
 
         ItemController ic = obj.AddComponent<ItemController>();
         ic.itemType = ItemType.Z_MysteryBox;

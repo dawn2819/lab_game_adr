@@ -926,7 +926,7 @@ public class PlayerA : MonoBehaviour
             KamehamehaC bullet = bulletObj.GetComponent<KamehamehaC>();
             if (bullet != null)
             {
-                targetEnemyB = GetNearestEnemyB();
+                targetEnemyB = GetNearestEnemyB(float.MaxValue); // Kamehameha khoá mục tiêu toàn bản đồ
                 bullet.Init(targetEnemyB);
             }
         }
@@ -980,7 +980,7 @@ public class PlayerA : MonoBehaviour
         tr.startColor = Color.yellow;
         tr.endColor = new Color(1f, 0f, 0f, 0f);
 
-        targetEnemyB = GetNearestEnemyB();
+        targetEnemyB = GetNearestEnemyB(10f); // Ki Blast bị giới hạn quét 10 đơn vị
         StartCoroutine(KiBlastFlightRoutine(kiObj, targetEnemyB));
     }
 
@@ -1031,20 +1031,23 @@ public class PlayerA : MonoBehaviour
     {
         isChargingOrFiring = true;
         isMeleeAttacking = true;
+        parts.SetPose(headMove, bodyJump, legJump);
 
         Vector3 startPos = transform.position;
+        // Lướt tới phía trước 3m tuỳ hướng quay mặt
         Vector3 dashPos = startPos + new Vector3(parts.transform.localScale.x > 0 ? 3f : -3f, 0f, 0f);
         
         if (parts.bodyRenderer != null) parts.bodyRenderer.color = Color.red;
 
         float dashTime = 0.15f;
         float t = 0;
+
         while (t < dashTime)
         {
             transform.position = Vector3.Lerp(startPos, dashPos, t / dashTime);
             t += Time.deltaTime;
             
-            targetEnemyB = GetNearestEnemyB();
+            targetEnemyB = GetNearestEnemyB(5f); // Melee chỉ đánh quái rất gần
             if (targetEnemyB != null && Vector3.Distance(transform.position, targetEnemyB.position) < 1.5f)
             {
                 EnemyB eb = targetEnemyB.GetComponent<EnemyB>();
@@ -1157,8 +1160,9 @@ public class PlayerA : MonoBehaviour
 
     /// <summary>
     /// Tìm kẻ địch B gần nhất để Kamehameha C tự động bám đuổi
+    /// Giới hạn khoảng cách maxDistance để tránh chiêu bị quá bá đạo (OP)
     /// </summary>
-    public Transform GetNearestEnemyB()
+    public Transform GetNearestEnemyB(float maxDistance = 15f)
     {
         EnemyB[] enemies = FindObjectsByType<EnemyB>(FindObjectsSortMode.None);
         if (enemies == null || enemies.Length == 0) return null;
@@ -1169,9 +1173,9 @@ public class PlayerA : MonoBehaviour
 
         foreach (var e in enemies)
         {
-            if (e == null) continue;
+            if (e == null || !e.gameObject.activeInHierarchy) continue;
             float d = Vector3.Distance(pos, e.transform.position);
-            if (d < minDist)
+            if (d < minDist && d <= maxDistance)
             {
                 minDist = d;
                 best = e.transform;
@@ -1545,57 +1549,72 @@ public class PlayerA : MonoBehaviour
         attackButton = btn;
 
         // 4. Các Nút Kỹ Năng Phụ (Ki Blast, Melee, Shield, Solar Flare)
-        CreateSkillButton(canvas.transform, "Btn_KiBlast", "Ki Blast\n(5 Ki)", new Vector2(-20, 300), new Color(1f, 0.5f, 0f), Attack2_KiBlast);
-        CreateSkillButton(canvas.transform, "Btn_Melee", "Melee\n(10 Ki)", new Vector2(-150, 300), new Color(1f, 0.2f, 0.2f), Attack3_Melee);
-        CreateSkillButton(canvas.transform, "Btn_Shield", "Shield\n(30 Ki)", new Vector2(-300, 150), new Color(0.2f, 0.6f, 1f), Defense1_Shield);
-        CreateSkillButton(canvas.transform, "Btn_Solar", "Solar\n(40 Ki)", new Vector2(-300, 250), new Color(1f, 1f, 0f), Defense2_SolarFlare);
+        // 4 Nút Skill sử dụng Sprite mới cắt
+        CreateSkillButton(canvas.transform, "Btn_KiBlast", "5 Ki", new Vector2(-20, 300), "btn_ki_blast", Attack2_KiBlast);
+        CreateSkillButton(canvas.transform, "Btn_Melee", "10 Ki", new Vector2(-150, 300), "btn_melee", Attack3_Melee);
+        CreateSkillButton(canvas.transform, "Btn_Shield", "30 Ki", new Vector2(-300, 150), "btn_shield", Defense1_Shield);
+        CreateSkillButton(canvas.transform, "Btn_Solar", "40 Ki", new Vector2(-300, 250), "btn_solar_flare", Defense2_SolarFlare);
 
         // 5. Cụm 4 Nút Di Chuyển D-Pad (Góc Dưới-Trái: Small2322.png)
         EnsureDpadButtons(canvas);
     }
 
-    private void CreateSkillButton(Transform parent, string name, string text, Vector2 anchoredPos, Color bgColor, System.Action action)
+    private void CreateSkillButton(Transform parent, string name, string costText, Vector2 anchoredPos, string spriteName, UnityEngine.Events.UnityAction action)
     {
-        Transform child = parent.Find(name);
-        GameObject btnObj = child != null ? child.gameObject : new GameObject(name);
+        Transform existing = parent.Find(name);
+        if (existing != null)
+        {
+            if (Application.isPlaying) Destroy(existing.gameObject);
+            else DestroyImmediate(existing.gameObject);
+        }
+
+        GameObject btnObj = new GameObject(name);
         btnObj.transform.SetParent(parent, false);
+        UnityEngine.UI.Image bg = btnObj.AddComponent<UnityEngine.UI.Image>();
+        
+        Sprite sp = Resources.Load<Sprite>(spriteName);
+        if (sp != null)
+        {
+            bg.sprite = sp;
+            bg.color = Color.white; // Không dùng màu đè lên sprite
+        }
+        else
+        {
+            bg.color = new Color(1f, 1f, 1f, 0.5f);
+        }
 
-        UnityEngine.UI.Image bg = btnObj.GetComponent<UnityEngine.UI.Image>();
-        if (bg == null) bg = btnObj.AddComponent<UnityEngine.UI.Image>();
-        bg.color = bgColor;
-
-        UnityEngine.UI.Button btn = btnObj.GetComponent<UnityEngine.UI.Button>();
-        if (btn == null) btn = btnObj.AddComponent<UnityEngine.UI.Button>();
-
+        UnityEngine.UI.Button btn = btnObj.AddComponent<UnityEngine.UI.Button>();
+        
         RectTransform rt = btnObj.GetComponent<RectTransform>();
-        if (rt == null) rt = btnObj.AddComponent<RectTransform>();
         rt.anchorMin = new Vector2(1, 0);
         rt.anchorMax = new Vector2(1, 0);
-        rt.pivot = new Vector2(1, 0); // Neo từ góc dưới phải
+        rt.pivot = new Vector2(1, 0); 
         rt.anchoredPosition = anchoredPos;
-        rt.sizeDelta = new Vector2(120, 80);
+        rt.sizeDelta = new Vector2(100, 100); // Hình vuông cho icon tròn
 
-        Transform textChild = btnObj.transform.Find("Text");
-        GameObject textObj = textChild != null ? textChild.gameObject : new GameObject("Text");
+        // Chữ hiển thị lượng Ki (nhỏ, ở góc dưới)
+        GameObject textObj = new GameObject("Text");
         textObj.transform.SetParent(btnObj.transform, false);
-
-        UnityEngine.UI.Text txt = textObj.GetComponent<UnityEngine.UI.Text>();
-        if (txt == null) txt = textObj.AddComponent<UnityEngine.UI.Text>();
+        UnityEngine.UI.Text txt = textObj.AddComponent<UnityEngine.UI.Text>();
         txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         txt.fontSize = 20;
-        txt.color = Color.black;
+        txt.color = Color.yellow;
         txt.fontStyle = FontStyle.Bold;
-        txt.alignment = TextAnchor.MiddleCenter;
-        txt.text = text;
+        txt.alignment = TextAnchor.LowerCenter;
+        txt.text = costText;
+        
+        // Thêm viền đen cho chữ dễ đọc
+        UnityEngine.UI.Outline outline = textObj.AddComponent<UnityEngine.UI.Outline>();
+        outline.effectColor = Color.black;
+        outline.effectDistance = new Vector2(1, -1);
 
         RectTransform txtRt = textObj.GetComponent<RectTransform>();
-        if (txtRt == null) txtRt = textObj.AddComponent<RectTransform>();
         txtRt.anchorMin = Vector2.zero;
         txtRt.anchorMax = Vector2.one;
-        txtRt.sizeDelta = Vector2.zero;
+        txtRt.sizeDelta = new Vector2(0, -20); // Dịch chữ xuống dưới đáy
 
         btn.onClick.RemoveAllListeners();
-        btn.onClick.AddListener(() => action());
+        // Bỏ onClick để tránh lỗi xả chiêu 2 lần (double cast) khi bấm trên điện thoại. Chỉ dùng PointerDown bên dưới.
 
         // Hỗ trợ PointerDown cho cảm ứng cực nhạy (giống nút đánh chính)
         UnityEngine.EventSystems.EventTrigger trigger = btnObj.GetComponent<UnityEngine.EventSystems.EventTrigger>();
