@@ -16,6 +16,8 @@ public class ItemController : MonoBehaviour
 
     private void Update()
     {
+        if (!GameManager.IsPlaying) return;
+
         // Rơi tự do
         transform.position += Vector3.down * fallSpeed * Time.deltaTime;
         timeAlive += Time.deltaTime;

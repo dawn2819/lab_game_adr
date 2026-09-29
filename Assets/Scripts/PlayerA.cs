@@ -181,6 +181,15 @@ public class PlayerA : MonoBehaviour
     public float kiRegenRate = 5f; // Hồi 5 Ki mỗi giây
     public bool isDead = false;
 
+    [Header("Cơ Chế Theo Cấp Độ")]
+    [Tooltip("Gió đẩy A theo trục X (đơn vị/giây), GameManager gán theo cấp độ")]
+    public float windX = 0f;
+
+    // Trạng thái công khai cho AI của NPC đọc
+    public bool IsAirborne => isJumping;
+    public bool IsBusy => isChargingOrFiring;
+    public bool FacingRight => transform.localScale.x > 0f;
+
     [Header("Prefabs & Sprites")]
     public GameObject projectileCPrefab;
 
@@ -395,15 +404,15 @@ public class PlayerA : MonoBehaviour
 
     public void TakeDamage(float amount)
     {
-        if (hasShield) return; // Không mất máu nếu có khiên
+        if (hasShield || !GameManager.IsPlaying) return; // Không mất máu nếu có khiên hoặc màn chơi đã kết thúc
         currentHp = Mathf.Clamp(currentHp - amount, 0, maxHp);
         if (HUDManager.Instance != null) HUDManager.Instance.UpdateHP(currentHp, maxHp);
+        if (GameManager.Instance != null) GameManager.Instance.OnPlayerDamaged();
 
         if (currentHp <= 0 && !isDead)
         {
             isDead = true;
-            Time.timeScale = 0f;
-            if (HUDManager.Instance != null) HUDManager.Instance.ShowGameOver();
+            if (GameManager.Instance != null) GameManager.Instance.OnPlayerDied();
             Debug.Log("Player A is dead! GAME OVER.");
         }
     }
@@ -433,7 +442,7 @@ public class PlayerA : MonoBehaviour
 
     private void Update()
     {
-        if (isChargingOrFiring) return;
+        if (isChargingOrFiring || !GameManager.IsPlaying) return;
 
         HandleAttackInput();
         HandleMovement();
@@ -624,6 +633,9 @@ public class PlayerA : MonoBehaviour
             SetIdlePose();
             currentMoveFrame = 0;
         }
+
+        // Gió của cấp độ (bão cát) liên tục đẩy A, biên màn hình bên dưới vẫn chặn lại
+        if (windX != 0f) transform.position += Vector3.right * windX * Time.deltaTime;
 
         // Đảm bảo không bao giờ lọt xuống dưới sàn chính diahinh hoặc vượt trần
         Vector3 curPos = transform.position;
@@ -1006,8 +1018,7 @@ public class PlayerA : MonoBehaviour
                     EnemyB eb = target.GetComponent<EnemyB>();
                     if (eb != null)
                     {
-                        if (GameManager.Instance != null) GameManager.Instance.AddScore(10);
-                        eb.StartCoroutine("DieAndRespawnRoutine");
+                        eb.Defeat(10);
                     }
                 }
                 Destroy(kiObj);
@@ -1051,12 +1062,10 @@ public class PlayerA : MonoBehaviour
             if (targetEnemyB != null && Vector3.Distance(transform.position, targetEnemyB.position) < 1.5f)
             {
                 EnemyB eb = targetEnemyB.GetComponent<EnemyB>();
-                if (eb != null && eb.gameObject.activeInHierarchy)
+                // Defeat chỉ tính 1 lần cho mỗi con B (trước đây cú lướt cộng điểm lặp lại mỗi frame)
+                if (eb != null && eb.gameObject.activeInHierarchy && eb.Defeat(20))
                 {
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayExplosion();
-                    if (GameManager.Instance != null) GameManager.Instance.AddScore(20);
-                    // Dùng SendMessage để gọi Coroutine ẩn/hiện thay vì SetActive(false) (tránh lỗi ngắt Coroutine/Invoke)
-                    eb.StartCoroutine("DieAndRespawnRoutine"); 
                 }
             }
             yield return null;

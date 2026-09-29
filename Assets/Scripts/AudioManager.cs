@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using System.Collections;
 
 public class AudioManager : MonoBehaviour
@@ -11,10 +12,22 @@ public class AudioManager : MonoBehaviour
 
     private bool isMusicMuted = false;
     private bool isSoundMuted = false;
+    private float musicVolume = 1f;
+    private float sfxVolume = 1f;
 
     private AudioClip shootClip;
     private AudioClip warningClip;
     private AudioClip explosionClip;
+    private AudioClip gameOverClip;
+    private AudioClip victoryClip;
+    private AudioClip clickClip;
+
+    // Luôn có AudioManager kể cả khi game mở từ scene menu (bản trong SampleScene sẽ tự hủy vì trùng)
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void Bootstrap()
+    {
+        if (Instance == null) new GameObject("AudioManager").AddComponent<AudioManager>();
+    }
 
     private void Awake()
     {
@@ -22,13 +35,56 @@ public class AudioManager : MonoBehaviour
         {
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            LoadSettings();
             InitializeAudioSources();
             GenerateSimulatedSounds();
+            ApplySettings();
+            // Nhạc nền bị dừng lúc thắng/thua sẽ phát lại khi sang scene mới
+            SceneManager.sceneLoaded += (scene, mode) => { if (bgmSource != null && !bgmSource.isPlaying) bgmSource.UnPause(); };
         }
         else
         {
             Destroy(gameObject);
         }
+    }
+
+    private void LoadSettings()
+    {
+        isMusicMuted = PlayerPrefs.GetInt("MusicMuted", 0) == 1;
+        isSoundMuted = PlayerPrefs.GetInt("SoundMuted", 0) == 1;
+        musicVolume = PlayerPrefs.GetFloat("MusicVolume", 1f);
+        sfxVolume = PlayerPrefs.GetFloat("SfxVolume", 1f);
+    }
+
+    private void SaveSettings()
+    {
+        PlayerPrefs.SetInt("MusicMuted", isMusicMuted ? 1 : 0);
+        PlayerPrefs.SetInt("SoundMuted", isSoundMuted ? 1 : 0);
+        PlayerPrefs.SetFloat("MusicVolume", musicVolume);
+        PlayerPrefs.SetFloat("SfxVolume", sfxVolume);
+        PlayerPrefs.Save();
+    }
+
+    private void ApplySettings()
+    {
+        bgmSource.mute = isMusicMuted;
+        sfxSource.mute = isSoundMuted;
+        warningSource.mute = isSoundMuted;
+        bgmSource.volume = 0.5f * musicVolume;
+        sfxSource.volume = 0.8f * sfxVolume;
+        warningSource.volume = sfxVolume;
+    }
+
+    public float MusicVolume
+    {
+        get => musicVolume;
+        set { musicVolume = Mathf.Clamp01(value); ApplySettings(); SaveSettings(); }
+    }
+
+    public float SfxVolume
+    {
+        get => sfxVolume;
+        set { sfxVolume = Mathf.Clamp01(value); ApplySettings(); SaveSettings(); }
     }
 
     private void InitializeAudioSources()
@@ -81,6 +137,12 @@ public class AudioManager : MonoBehaviour
         }
         explosionClip.SetData(expData, 0);
 
+        // Thua: 4 nốt đi xuống (G4 -> E4 -> C4 -> G3), nốt cuối kéo dài
+        gameOverClip = CreateMelody("GameOver", new[] { 392f, 329.63f, 261.63f, 196f }, new[] { 0.25f, 0.25f, 0.25f, 0.9f });
+        // Thắng: hợp âm rải đi lên (C5 -> E5 -> G5 -> C6) kiểu fanfare
+        victoryClip = CreateMelody("Victory", new[] { 523.25f, 659.25f, 783.99f, 1046.5f }, new[] { 0.12f, 0.12f, 0.12f, 0.7f });
+        clickClip = CreateMelody("Click", new[] { 1400f }, new[] { 0.05f });
+
         // Tạo nhạc nền (BGM) điện tử 8-bit lặp lại (dài 4 giây)
         AudioClip bgmClip = AudioClip.Create("BGM", 44100 * 4, 1, 44100, false);
         float[] bgmData = new float[44100 * 4];
@@ -106,7 +168,7 @@ public class AudioManager : MonoBehaviour
         if (bgmSource != null)
         {
             bgmSource.clip = bgmClip;
-            if (!isMusicMuted) bgmSource.Play();
+            bgmSource.Play(); // Tắt nhạc dùng mute để bật lại vẫn còn nhạc (trạng thái mute được lưu giữa các lần mở game)
         }
     }
 
@@ -119,23 +181,48 @@ public class AudioManager : MonoBehaviour
         }
     }
 
+    /// <summary>Chuỗi nốt sóng tam giác có envelope tắt dần, dùng cho hiệu ứng thắng/thua/bấm nút.</summary>
+    private AudioClip CreateMelody(string clipName, float[] freqs, float[] durations)
+    {
+        const int rate = 44100;
+        int total = 0;
+        foreach (float d in durations) total += Mathf.CeilToInt(d * rate);
+
+        float[] data = new float[total];
+        int offset = 0;
+        for (int n = 0; n < freqs.Length; n++)
+        {
+            int len = Mathf.CeilToInt(durations[n] * rate);
+            for (int i = 0; i < len; i++)
+            {
+                float t = i / (float)rate;
+                float tri = Mathf.PingPong(t * freqs[n] * 4f, 2f) - 1f;
+                float env = Mathf.Min(1f, i / 200f) * Mathf.Exp(-t * 3f / durations[n]);
+                data[offset + i] = tri * env * 0.4f;
+            }
+            offset += len;
+        }
+
+        AudioClip clip = AudioClip.Create(clipName, total, 1, rate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
     public void ToggleMusic()
     {
-        isMusicMuted = !isMusicMuted;
-        bgmSource.mute = isMusicMuted;
+        SetMusicMute(!isMusicMuted);
     }
-    
+
     public void SetMusicMute(bool mute)
     {
         isMusicMuted = mute;
         bgmSource.mute = mute;
+        SaveSettings();
     }
 
     public void ToggleSound()
     {
-        isSoundMuted = !isSoundMuted;
-        sfxSource.mute = isSoundMuted;
-        warningSource.mute = isSoundMuted;
+        SetSoundMute(!isSoundMuted);
         Debug.Log("[AudioManager] ToggleSound. isSoundMuted = " + isSoundMuted);
     }
 
@@ -144,6 +231,24 @@ public class AudioManager : MonoBehaviour
         isSoundMuted = mute;
         sfxSource.mute = mute;
         warningSource.mute = mute;
+        SaveSettings();
+    }
+
+    public void PlayGameOver()
+    {
+        bgmSource.Pause();
+        if (!isSoundMuted) sfxSource.PlayOneShot(gameOverClip);
+    }
+
+    public void PlayVictory()
+    {
+        bgmSource.Pause();
+        if (!isSoundMuted) sfxSource.PlayOneShot(victoryClip);
+    }
+
+    public void PlayClick()
+    {
+        if (!isSoundMuted) sfxSource.PlayOneShot(clickClip);
     }
 
     public bool IsMusicMuted => isMusicMuted;

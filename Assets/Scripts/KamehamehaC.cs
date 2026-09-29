@@ -73,6 +73,9 @@ public class KamehamehaC : MonoBehaviour
         targetEnemyB = target;
     }
 
+    // NPC Sniper đọc để biết mình có đang bị chưởng khóa mục tiêu không
+    public Transform Target => targetEnemyB;
+
     private void Update()
     {
         if (isExploding) return;

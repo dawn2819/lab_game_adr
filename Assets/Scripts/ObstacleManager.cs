@@ -39,7 +39,8 @@ public class ObstacleManager : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureInstance()
     {
-        if (FindFirstObjectByType<ObstacleManager>() == null)
+        // Chỉ tự tạo trong scene gameplay (có PlayerA), không sinh bệ bay trong các scene menu
+        if (FindFirstObjectByType<PlayerA>() != null && FindFirstObjectByType<ObstacleManager>() == null)
         {
             GameObject obsGo = new GameObject("ObstacleManager");
             obsGo.AddComponent<ObstacleManager>();

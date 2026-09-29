@@ -72,6 +72,25 @@ public class EnemyB : MonoBehaviour
     private float minSpawnY;
     private float maxSpawnY;
 
+    [Header("AI Thông Minh (GameManager gán theo cấp độ; Roamer = bay ngẫu nhiên như cũ)")]
+    public EnemyAIType aiType = EnemyAIType.Roamer;
+    [Tooltip("Tầm phát hiện A của Hunter")]
+    public float detectRange = 7f;
+
+    private enum AIState { Patrol, Chase, Retreat, Kite, Fire, Dodge, Flank, Dive, Recover }
+    private AIState aiState = AIState.Patrol;
+    private float stateTimer = 0f;
+    private PlayerA player;
+    private bool hasPlayerSample = false;
+    private Vector3 lastPlayerPos;
+    private Vector3 playerVelocity;
+    private float fireCooldown = 1.5f;
+    private float dodgeScanTimer = 0f;
+    private float avoidTimer = 0f;
+    private float avoidDirY = 1f;
+    private Color tint = Color.white;
+    private TextMesh stateLabel;
+
     private void Awake()
     {
         parts = GetComponent<CharacterParts>();
@@ -173,18 +192,25 @@ public class EnemyB : MonoBehaviour
     {
         CalculateScreenBounds();
 
-        if (isHit || isStunned) return;
+        if (isHit || isStunned || !GameManager.IsPlaying) return;
 
-        if (randomMovement)
+        if (aiType != EnemyAIType.Roamer)
         {
-            HandleRandomRoam();
+            UpdateSmartAI();
         }
         else
         {
-            HandleStraightMovement();
-        }
+            if (randomMovement)
+            {
+                HandleRandomRoam();
+            }
+            else
+            {
+                HandleStraightMovement();
+            }
 
-        CheckScreenBordersAndWrap();
+            CheckScreenBordersAndWrap();
+        }
         UpdateMoveAnimation();
 
         CheckForbiddenZone();
@@ -213,7 +239,7 @@ public class EnemyB : MonoBehaviour
                 if (pA.isMeleeAttacking)
                 {
                     // A đang dùng đòn cận chiến, B chết, A không mất máu
-                    StartCoroutine(DieAndRespawnRoutine());
+                    Defeat(20);
                 }
                 else
                 {
@@ -342,9 +368,23 @@ public class EnemyB : MonoBehaviour
     {
         if (gameObject.activeInHierarchy)
         {
+            bool credited = !isHit;
             StopAllCoroutines();
+            // StopAllCoroutines cắt ngang StunRoutine: trả lại trạng thái để B không bị đứng im vĩnh viễn
+            isStunned = false;
+            ApplyTint();
             StartCoroutine(HitAndRespawnRoutine(stunDuration));
+            if (credited && GameManager.Instance != null) GameManager.Instance.RegisterKill(30);
         }
+    }
+
+    /// <summary>A hạ gục B (Ki Blast / cận chiến): tính điểm + mục tiêu đúng 1 lần rồi hồi sinh. False nếu B đã gục.</summary>
+    public bool Defeat(int scoreReward)
+    {
+        if (isHit) return false;
+        StartCoroutine(DieAndRespawnRoutine());
+        if (GameManager.Instance != null) GameManager.Instance.RegisterKill(scoreReward);
+        return true;
     }
 
     /// <summary>
@@ -609,6 +649,274 @@ public class EnemyB : MonoBehaviour
             parts.characterScale = characterScale;
             parts.headHeight = headHeight;
         }
+
+        if (stateLabel != null)
+        {
+            stateLabel.gameObject.SetActive(!isHit);
+            stateLabel.transform.position = transform.position + new Vector3(0f, 0.75f, 0f);
+            stateLabel.text = aiType.ToString().ToUpper() + ": " + (isStunned ? "STUNNED" : aiState.ToString().ToUpper());
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (stateLabel != null) Destroy(stateLabel.gameObject);
+    }
+
+    // ===================== AI THÔNG MINH =====================
+    // Hunter : Tuần tra -> phát hiện A thì đuổi theo điểm ĐÓN ĐẦU (dự đoán vận tốc A); sợ khiên / đòn cận chiến thì rút lui.
+    // Sniper : Giữ khoảng cách ~5.5, bay ngang tầm A, chỉ bắn khi không bị vật cản che; thấy Kamehameha lao tới thì né.
+    // Flanker: Phối hợp gọng kìm với Hunter (đứng phía đối diện qua A), chờ A nhảy / tụ chưởng mới bổ nhào tấn công.
+
+    /// <summary>Gán vai trò AI + tốc độ theo cấp độ, tô màu nhận diện và gắn nhãn trạng thái trên đầu.</summary>
+    public void Configure(EnemyAIType type, float speedScale)
+    {
+        aiType = type;
+        moveSpeed *= speedScale;
+
+        if (type == EnemyAIType.Hunter) tint = new Color(1f, 0.55f, 0.55f);
+        else if (type == EnemyAIType.Sniper) tint = new Color(0.55f, 0.85f, 1f);
+        else if (type == EnemyAIType.Flanker) tint = new Color(0.8f, 0.6f, 1f);
+        else tint = Color.white;
+        ApplyTint();
+        ResetAIState();
+
+        if (type != EnemyAIType.Roamer && stateLabel == null)
+        {
+            GameObject labelObj = new GameObject(name + "_AILabel");
+            stateLabel = labelObj.AddComponent<TextMesh>();
+            stateLabel.characterSize = 0.07f;
+            stateLabel.fontSize = 40;
+            stateLabel.anchor = TextAnchor.LowerCenter;
+            stateLabel.alignment = TextAlignment.Center;
+            stateLabel.color = tint;
+            stateLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            labelObj.GetComponent<Renderer>().material = stateLabel.font.material;
+            labelObj.GetComponent<Renderer>().sortingOrder = 7;
+        }
+    }
+
+    private void ApplyTint()
+    {
+        if (parts == null) return;
+        if (parts.headRenderer != null) parts.headRenderer.color = tint;
+        if (parts.bodyRenderer != null) parts.bodyRenderer.color = tint;
+        if (parts.legRenderer != null) parts.legRenderer.color = tint;
+    }
+
+    private void ResetAIState()
+    {
+        if (aiType == EnemyAIType.Sniper) SetState(AIState.Kite);
+        else if (aiType == EnemyAIType.Flanker) SetState(AIState.Flank);
+        else SetState(AIState.Patrol);
+    }
+
+    private void SetState(AIState s)
+    {
+        aiState = s;
+        stateTimer = 0f;
+    }
+
+    private void UpdateSmartAI()
+    {
+        if (player == null) player = FindFirstObjectByType<PlayerA>();
+        if (player == null) return;
+
+        // Ước lượng vận tốc A (làm mượt) để các NPC dự đoán vị trí sắp tới
+        Vector3 p = player.transform.position;
+        float dt = Time.deltaTime;
+        if (hasPlayerSample && dt > 0f) playerVelocity = Vector3.Lerp(playerVelocity, (p - lastPlayerPos) / dt, 0.2f);
+        lastPlayerPos = p;
+        hasPlayerSample = true;
+        stateTimer += dt;
+
+        if (aiType == EnemyAIType.Hunter) UpdateHunter(p);
+        else if (aiType == EnemyAIType.Sniper) UpdateSniper(p);
+        else if (aiType == EnemyAIType.Flanker) UpdateFlanker(p);
+    }
+
+    private Vector3 PredictPlayer(float leadTime)
+    {
+        return lastPlayerPos + Vector3.ClampMagnitude(playerVelocity * leadTime, 3f);
+    }
+
+    private void UpdateHunter(Vector3 p)
+    {
+        float dist = Vector3.Distance(transform.position, p);
+        bool threatened = player.hasShield || player.isMeleeAttacking;
+
+        switch (aiState)
+        {
+            case AIState.Chase:
+                if (threatened) { SetState(AIState.Retreat); break; }
+                if (dist > detectRange * 1.6f) { SetState(AIState.Patrol); break; }
+                SteerTowards(PredictPlayer(Mathf.Clamp(dist / moveSpeed, 0f, 0.8f)), moveSpeed * 1.15f);
+                break;
+
+            case AIState.Retreat:
+                Vector3 away = (transform.position - p).normalized;
+                SteerTowards(transform.position + away * 3f + Vector3.up, moveSpeed * 1.2f);
+                if (stateTimer > 1.2f && !threatened) SetState(dist < detectRange ? AIState.Chase : AIState.Patrol);
+                break;
+
+            default:
+                Patrol();
+                if (dist < detectRange && !threatened) SetState(AIState.Chase);
+                break;
+        }
+    }
+
+    private void UpdateSniper(Vector3 p)
+    {
+        Vector3 toPlayer = p - transform.position;
+        float dist = toPlayer.magnitude;
+        fireCooldown -= Time.deltaTime;
+
+        // Quét Kamehameha đang khóa mục tiêu vào mình (0.15s/lần)
+        dodgeScanTimer -= Time.deltaTime;
+        if (dodgeScanTimer <= 0f && aiState != AIState.Dodge)
+        {
+            dodgeScanTimer = 0.15f;
+            foreach (KamehamehaC k in FindObjectsByType<KamehamehaC>(FindObjectsSortMode.None))
+            {
+                if (k.Target == transform && Vector3.Distance(k.transform.position, transform.position) < 4f)
+                {
+                    avoidDirY = transform.position.y > (minSpawnY + maxSpawnY) * 0.5f ? -1f : 1f;
+                    SetState(AIState.Dodge);
+                    break;
+                }
+            }
+        }
+
+        if (aiState == AIState.Dodge)
+        {
+            SteerTowards(transform.position + new Vector3(0f, avoidDirY * 3f, 0f), moveSpeed * 1.8f);
+            if (stateTimer > 0.4f) SetState(AIState.Kite);
+            return;
+        }
+
+        if (aiState == AIState.Fire)
+        {
+            if (stateTimer > 0.3f) SetState(AIState.Kite); // Đứng yên giữ tư thế bắn
+            return;
+        }
+
+        // Giữ khoảng cách ~5.5 ở phía đang đứng; sát biên thì vòng sang phía còn lại
+        float side = Mathf.Sign(transform.position.x - p.x);
+        float desiredX = p.x + side * 5.5f;
+        if (desiredX < leftBorderX + 1f || desiredX > rightBorderX - 1f) desiredX = p.x - side * 5.5f;
+        float desiredY = Mathf.Max(p.y + 0.4f, BackgroundManager.GroundSurfaceY + 1.7f);
+        SteerTowards(new Vector3(desiredX, desiredY, 0f), moveSpeed);
+        parts.Flip(p.x > transform.position.x);
+
+        if (fireCooldown <= 0f && dist > 2.5f && dist < 10f && Mathf.Abs(toPlayer.y) < 2.5f && HasLineOfSight(p))
+        {
+            fireCooldown = 1.8f;
+            Vector3 muzzle = transform.position + new Vector3(0f, 0.3f, 0f);
+            EnemyShot.Fire(muzzle, PredictPlayer(dist / EnemyShot.Speed), 10f);
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayShoot();
+            SetState(AIState.Fire);
+        }
+    }
+
+    private void UpdateFlanker(Vector3 p)
+    {
+        switch (aiState)
+        {
+            case AIState.Dive:
+                if (player.hasShield || stateTimer > 1.2f) { SetState(AIState.Recover); break; }
+                SteerTowards(PredictPlayer(0.3f), moveSpeed * 1.9f);
+                break;
+
+            case AIState.Recover:
+                SteerTowards(new Vector3(transform.position.x, maxSpawnY, 0f), moveSpeed * 1.2f);
+                if (stateTimer > 0.9f) SetState(AIState.Flank);
+                break;
+
+            default:
+                // Gọng kìm: đứng phía đối diện Hunter qua A; không có Hunter thì vòng ra sau lưng A
+                EnemyB hunter = FindPartner(EnemyAIType.Hunter);
+                float side = hunter != null ? -Mathf.Sign(hunter.transform.position.x - p.x) : (player.FacingRight ? -1f : 1f);
+                Vector3 flankPoint = new Vector3(
+                    Mathf.Clamp(p.x + side * 3.5f, leftBorderX + 1f, rightBorderX - 1f),
+                    Mathf.Min(p.y + 2.8f, maxSpawnY), 0f);
+                SteerTowards(flankPoint, moveSpeed * 1.1f);
+
+                // Chớp thời cơ khi A không phản đòn được (đang nhảy / tụ chưởng) hoặc đã chờ quá lâu
+                bool inPosition = Vector3.Distance(transform.position, flankPoint) < 1.2f;
+                if (inPosition && !player.hasShield && (player.IsAirborne || player.IsBusy || stateTimer > 3f))
+                    SetState(AIState.Dive);
+                break;
+        }
+    }
+
+    private EnemyB FindPartner(EnemyAIType type)
+    {
+        foreach (EnemyB e in FindObjectsByType<EnemyB>(FindObjectsSortMode.None))
+        {
+            if (e != this && e.aiType == type && !e.isHit) return e;
+        }
+        return null;
+    }
+
+    private void Patrol()
+    {
+        randomTimer += Time.deltaTime;
+        if (randomTimer >= nextChangeTime || Vector3.Distance(transform.position, currentWaypoint) < 0.35f)
+        {
+            randomTimer = 0f;
+            nextChangeTime = Random.Range(changeDirIntervalMin, changeDirIntervalMax);
+            currentWaypoint = new Vector3(Random.Range(leftBorderX + 1f, rightBorderX - 1f), Random.Range(minSpawnY + 1f, maxSpawnY), 0f);
+        }
+        SteerTowards(currentWaypoint, moveSpeed * 0.7f);
+    }
+
+    /// <summary>Di chuyển tới target trong khung màn hình, không xuyên vật cản; bị chặn thì vòng lên/xuống 0.5s.</summary>
+    private void SteerTowards(Vector3 target, float speed)
+    {
+        Vector3 pos = transform.position;
+        Vector3 toTarget = target - pos;
+        float step = Mathf.Min(speed * Time.deltaTime, toTarget.magnitude);
+        if (step <= 0.0001f) return;
+
+        Vector3 dir = toTarget.normalized;
+        if (avoidTimer > 0f)
+        {
+            avoidTimer -= Time.deltaTime;
+            dir = (dir + new Vector3(0f, avoidDirY * 1.5f, 0f)).normalized;
+        }
+
+        Vector3 next = pos + dir * step;
+        next.x = Mathf.Clamp(next.x, leftBorderX + 0.5f, rightBorderX - 0.5f);
+        next.y = Mathf.Clamp(next.y, BackgroundManager.GroundSurfaceY + 0.45f, BackgroundManager.CeilingY - 0.3f);
+
+        Vector3 resolved = ResolveObstacleCollisions(next, pos);
+        if (avoidTimer <= 0f && (resolved - next).sqrMagnitude > 0.0001f)
+        {
+            avoidTimer = 0.5f;
+            avoidDirY = target.y >= pos.y ? 1f : -1f;
+        }
+        transform.position = resolved;
+
+        if (dir.x > 0.05f) parts.Flip(true);
+        else if (dir.x < -0.05f) parts.Flip(false);
+    }
+
+    /// <summary>Đường bắn tới A có bị bệ vật cản che không (lấy mẫu dọc đoạn thẳng).</summary>
+    private bool HasLineOfSight(Vector3 target)
+    {
+        Vector3 from = transform.position;
+        int samples = Mathf.CeilToInt(Vector3.Distance(from, target) / 0.4f);
+        for (int s = 1; s < samples; s++)
+        {
+            Vector3 pt = Vector3.Lerp(from, target, s / (float)samples);
+            foreach (FloatingObstacle obs in FloatingObstacle.ActiveObstacles)
+            {
+                if (obs == null || !obs.gameObject.activeInHierarchy) continue;
+                if (pt.x > obs.LeftX && pt.x < obs.RightX && pt.y > obs.BottomSurfaceY && pt.y < obs.TopSurfaceY) return false;
+            }
+        }
+        return true;
     }
 
     private void CalculateScreenBounds()
@@ -634,6 +942,7 @@ public class EnemyB : MonoBehaviour
         transform.position = new Vector3(rightBorderX, randomY, 0f);
         initialY = randomY;
         PickNewWaypoint();
+        ResetAIState();
     }
 
 #if UNITY_EDITOR
