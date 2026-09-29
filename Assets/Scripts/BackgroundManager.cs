@@ -61,7 +61,8 @@ public class BackgroundManager : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureInstance()
     {
-        if (FindFirstObjectByType<BackgroundManager>() == null)
+        // Chỉ tự tạo trong scene gameplay (có PlayerA), không tạo trong các scene menu
+        if (FindFirstObjectByType<PlayerA>() != null && FindFirstObjectByType<BackgroundManager>() == null)
         {
             GameObject bgGo = new GameObject("BackgroundManager");
             bgGo.AddComponent<BackgroundManager>();

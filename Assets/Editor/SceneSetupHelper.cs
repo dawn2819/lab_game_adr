@@ -16,6 +16,8 @@ public static class SceneSetupHelper
         if (EditorApplication.isPlayingOrWillChangePlaymode) return;
         var activeScene = EditorSceneManager.GetActiveScene();
         if (!activeScene.isLoaded) return;
+        // Chỉ dựng scene gameplay; các scene menu (MainMenu, Settings, History, Achievements) tự dựng UI lúc chạy
+        if (activeScene.path != "Assets/Scenes/SampleScene.unity") return;
 
         // 1. Kiểm tra hoặc tạo BackgroundManager
         BackgroundManager bgMgr = Object.FindFirstObjectByType<BackgroundManager>();
@@ -207,7 +209,7 @@ public static class SceneSetupHelper
         }
 
         string exePath = System.IO.Path.Combine(buildDir, "Lab_NRO_2D.exe");
-        string[] scenes = new string[] { "Assets/Scenes/SampleScene.unity" };
+        string[] scenes = EditorBuildSettingsScene.GetActiveSceneList(EditorBuildSettings.scenes); // MainMenu đầu tiên
 
         BuildPlayerOptions options = new BuildPlayerOptions
         {
@@ -267,7 +269,7 @@ public static class SceneSetupHelper
         }
 
         string apkPath = System.IO.Path.Combine(buildDir, "Lab_NRO_2D.apk");
-        string[] scenes = new string[] { "Assets/Scenes/SampleScene.unity" };
+        string[] scenes = EditorBuildSettingsScene.GetActiveSceneList(EditorBuildSettings.scenes); // MainMenu đầu tiên
 
         BuildPlayerOptions options = new BuildPlayerOptions
         {

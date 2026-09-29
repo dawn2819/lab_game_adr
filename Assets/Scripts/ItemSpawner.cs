@@ -8,17 +8,10 @@ public class ItemSpawner : MonoBehaviour
     public float spawnInterval = 5f;
     private float timer = 0f;
 
+    // Sống theo SampleScene (không DontDestroyOnLoad) để không rơi vật phẩm vào các màn hình menu
     private void Awake()
     {
-        if (Instance == null)
-        {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-        }
-        else
-        {
-            Destroy(gameObject);
-        }
+        Instance = this;
     }
 
     private void Update()
